@@ -1,0 +1,8 @@
+[
+  { "name": "Dallas, TX -> Chicago, IL",        "start": "Dallas, TX",       "finish": "Chicago, IL",   "expectStatus": 201 },
+  { "name": "Denver, CO -> Atlanta, GA",         "start": "Denver, CO",       "finish": "Atlanta, GA",   "expectStatus": 201 },
+  { "name": "Los Angeles, CA -> New York, NY",   "start": "Los Angeles, CA",  "finish": "New York, NY",  "expectStatus": 201 },
+  { "name": "Seattle, WA -> Miami, FL",          "start": "Seattle, WA",      "finish": "Miami, FL",     "expectStatus": 201 },
+  { "name": "Boston, MA -> Houston, TX",         "start": "Boston, MA",       "finish": "Houston, TX",   "expectStatus": 201 },
+  { "name": "Portland, OR -> Phoenix, AZ (sparse corridor, >500mi gap)", "start": "Portland, OR", "finish": "Phoenix, AZ", "expectStatus": 422 }
+]

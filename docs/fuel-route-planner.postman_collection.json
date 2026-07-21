@@ -1,0 +1,187 @@
+{
+  "info": {
+    "name": "Fuel Route Planner",
+    "description": "Live API tests for the Fuel Route Planner.\n\nRun the functional suite:\n  newman run docs/fuel-route-planner.postman_collection.json\n\nRun the data-driven route tests over the data file:\n  newman run docs/fuel-route-planner.postman_collection.json --folder \"Data-driven route tests\" -d docs/fuel-route-planner.postman_data.json\n\nOr import both files into Postman (Import), then Runner -> select the collection, attach the data file.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "tripId", "value": "" },
+    { "key": "start", "value": "Dallas, TX" },
+    { "key": "finish", "value": "Chicago, IL" },
+    { "key": "expectStatus", "value": "201" }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/health/", "host": ["{{baseUrl}}"], "path": ["api", "health", ""] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json();",
+              "pm.test('status ok', () => pm.expect(d.status).to.eql('ok'));",
+              "pm.test('fuel stations loaded', () => pm.expect(d.stations_loaded).to.be.above(6000));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Plan trip  (Dallas, TX -> Chicago, IL)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"start\": \"Dallas, TX\",\n  \"finish\": \"Chicago, IL\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/trips/", "host": ["{{baseUrl}}"], "path": ["api", "trips", ""] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const d = pm.response.json();",
+              "pm.collectionVariables.set('tripId', d.id);",
+              "pm.test('has distance, gallons, total cost', () => {",
+              "  pm.expect(d).to.have.property('distance_miles');",
+              "  pm.expect(d).to.have.property('gallons_used');",
+              "  pm.expect(d).to.have.property('total_fuel_cost');",
+              "});",
+              "pm.test('returns a route polyline', () => pm.expect(d.route_geometry.length).to.be.above(1));",
+              "pm.test('has fuel stops', () => pm.expect(d.fuel_stops.length).to.be.above(0));",
+              "",
+              "// REQUIREMENT: max range 500 miles — every leg (origin->stop..->finish) <= 500",
+              "const marks = [0, ...d.fuel_stops.map(s => s.mile_marker), d.distance_miles];",
+              "let maxGap = 0;",
+              "for (let i = 0; i < marks.length - 1; i++) maxGap = Math.max(maxGap, marks[i+1] - marks[i]);",
+              "pm.test(`every leg <= 500 mi (max leg = ${maxGap.toFixed(0)} mi)`, () => pm.expect(maxGap).to.be.at.most(500.5));",
+              "",
+              "// REQUIREMENT: 10 MPG — gallons billed == distance / 10 (every gallon paid for)",
+              "pm.test('gallons_used == distance / 10', () => pm.expect(Math.abs(d.gallons_used - d.distance_miles / 10)).to.be.below(0.6));",
+              "const soldGal = d.fuel_stops.reduce((a, s) => a + s.gallons, 0);",
+              "pm.test('sum(stop gallons) reconciles with gallons_used', () => pm.expect(Math.abs(soldGal - d.gallons_used)).to.be.below(0.6));",
+              "",
+              "// cost-effectiveness sanity: average paid never below the cheapest observed price",
+              "const minPrice = Math.min(...d.fuel_stops.map(s => s.price_per_gallon));",
+              "const avg = d.total_fuel_cost / d.gallons_used;",
+              "pm.test(`avg $/gal ($${avg.toFixed(3)}) >= cheapest stop ($${minPrice.toFixed(3)})`, () => pm.expect(avg).to.be.at.least(minPrice - 0.001));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get trip  (persisted in Postgres)",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/api/trips/{{tripId}}/", "host": ["{{baseUrl}}"], "path": ["api", "trips", "{{tripId}}", ""] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json();",
+              "pm.test('returns the same trip id', () => pm.expect(Number(d.id)).to.eql(Number(pm.collectionVariables.get('tripId'))));",
+              "pm.test('fuel stops persisted', () => pm.expect(d.fuel_stops.length).to.be.above(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Range safety  (Portland, OR -> Phoenix, AZ, >500 mi gap)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"start\": \"Portland, OR\",\n  \"finish\": \"Phoenix, AZ\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/trips/", "host": ["{{baseUrl}}"], "path": ["api", "trips", ""] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422 Unprocessable (refused, not mis-planned)', () => pm.response.to.have.status(422));",
+              "const d = pm.response.json();",
+              "pm.test('error explains the 500 mi range', () => pm.expect(d.error).to.include('500 mi range'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Validation  (missing finish -> 400)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"start\": \"Dallas, TX\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/trips/", "host": ["{{baseUrl}}"], "path": ["api", "trips", ""] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('flags the missing field', () => pm.expect(pm.response.text()).to.include('finish'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data-driven route tests",
+      "description": "Iterates over docs/fuel-route-planner.postman_data.json (start, finish, expectStatus). Run with:  newman run <collection> --folder \"Data-driven route tests\" -d docs/fuel-route-planner.postman_data.json",
+      "item": [
+        {
+          "name": "Plan route  ({{start}} -> {{finish}})",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"start\": \"{{start}}\",\n  \"finish\": \"{{finish}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/trips/", "host": ["{{baseUrl}}"], "path": ["api", "trips", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const label = pm.iterationData.get('name') || `${pm.variables.get('start')} -> ${pm.variables.get('finish')}`;",
+                  "const expected = Number(pm.iterationData.get('expectStatus') || pm.variables.get('expectStatus') || 201);",
+                  "pm.test(`${label}  ->  ${expected}`, () => pm.response.to.have.status(expected));",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "  const d = pm.response.json();",
+                  "  const marks = [0, ...d.fuel_stops.map(s => s.mile_marker), d.distance_miles];",
+                  "  let maxGap = 0;",
+                  "  for (let i = 0; i < marks.length - 1; i++) maxGap = Math.max(maxGap, marks[i+1] - marks[i]);",
+                  "  pm.test(`   every leg <= 500 mi (max ${maxGap.toFixed(0)} mi, ${d.fuel_stops.length} stops, $${d.total_fuel_cost})`, () => pm.expect(maxGap).to.be.at.most(500.5));",
+                  "  pm.test('   gallons_used == distance / 10', () => pm.expect(Math.abs(d.gallons_used - d.distance_miles / 10)).to.be.below(0.6));",
+                  "  const minPrice = Math.min(...d.fuel_stops.map(s => s.price_per_gallon));",
+                  "  pm.test('   avg $/gal >= cheapest stop', () => pm.expect(d.total_fuel_cost / d.gallons_used).to.be.at.least(minPrice - 0.001));",
+                  "} else if (pm.response.code === 422) {",
+                  "  pm.test('   refused with a clear 500 mi range message', () => pm.expect(pm.response.json().error).to.include('500 mi range'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
