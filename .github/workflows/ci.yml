@@ -19,6 +19,7 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DB_HOST: localhost
+      SECRET_KEY: ci-only-not-a-secret
     defaults:
       run:
         working-directory: backend
