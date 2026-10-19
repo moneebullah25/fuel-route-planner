@@ -4,6 +4,10 @@ Given a start and finish in the USA, returns the driving route, the most cost-ef
 
 ## Demo
 
+![Route map and fuel stops for Dallas, TX to Chicago, IL](./docs/images/demo.png)
+
+Caption: real capture of the running app (Dallas, TX to Chicago, IL: route, 7 fuel stops, total cost).
+
 ![Fuel Route Planner demo](./docs/screenshots/demo.gif)
 
 - Live: run locally with `make setup && make run`, then open http://localhost:5173
