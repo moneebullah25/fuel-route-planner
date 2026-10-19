@@ -96,3 +96,7 @@ The OPIS price CSV has only City/State. `scripts/geocode_stations.py` maps each 
 ```bash
 cd backend && uv run --group build python scripts/geocode_stations.py
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
